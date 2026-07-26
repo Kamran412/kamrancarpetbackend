@@ -1,0 +1,483 @@
+// Kamran Carpets — Prisma schema
+// Database: Supabase PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==========================================================
+// ENUMS
+// ==========================================================
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  EDITOR
+  CUSTOMER
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FLAT
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ==========================================================
+// USERS & AUTH
+// ==========================================================
+
+model User {
+  id            String   @id @default(uuid())
+  supabaseId    String?  @unique // links to Supabase Auth user
+  name          String
+  email         String   @unique
+  phone         String?
+  passwordHash  String? // only used if not using Supabase-managed auth
+  role          Role     @default(CUSTOMER)
+  isActive      Boolean  @default(true)
+  avatarUrl     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  addresses     Address[]
+  orders        Order[]
+  wishlist      WishlistItem[]
+  compareItems  CompareItem[]
+  reviews       Review[]
+  recentlyViewed RecentlyViewed[]
+  activityLogs  ActivityLog[]
+
+  @@index([email])
+}
+
+model Address {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName   String
+  phone      String
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  postalCode String
+  country    String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+// ==========================================================
+// CATALOG
+// ==========================================================
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String
+  slug        String     @unique
+  description String?
+  imageUrl    String?
+  bannerUrl   String?
+  parentId    String?
+  parent      Category?  @relation("CategoryToSubcategory", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryToSubcategory")
+  products    Product[]
+  seoTitle       String?
+  seoDescription String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+enum CollectionType {
+  LUXURY
+  PREMIUM
+  TRADITIONAL
+  MODERN
+  SEASONAL
+}
+
+model Collection {
+  id          String         @id @default(uuid())
+  name        String
+  slug        String         @unique
+  type        CollectionType @default(LUXURY)
+  description String?
+  imageUrl    String?
+  products    Product[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model Brand {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  slug      String    @unique
+  logoUrl   String?
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+model Product {
+  id                String        @id @default(uuid())
+  name              String
+  slug              String        @unique
+  sku               String        @unique
+  description       String
+  shortDescription  String?
+
+  categoryId        String?
+  category          Category?     @relation(fields: [categoryId], references: [id])
+  collectionId      String?
+  collection        Collection?   @relation(fields: [collectionId], references: [id])
+  brandId           String?
+  brand             Brand?        @relation(fields: [brandId], references: [id])
+
+  material          String?
+  countryOfOrigin   String?
+  color             String?
+  shape             String?
+  thickness         String?
+  weight            String?
+
+  availableSizes    ProductSize[]
+  customSizeAllowed Boolean       @default(false)
+
+  price             Decimal       @db.Decimal(10, 2)
+  salePrice         Decimal?      @db.Decimal(10, 2)
+  currency          String        @default("USD")
+
+  stock             Int           @default(0)
+  lowStockThreshold Int           @default(5)
+
+  tags              String[]
+  ratingAverage     Float         @default(0)
+  ratingCount       Int           @default(0)
+
+  featuredImage     String?
+  hoverImage        String?
+  gallery           ProductImage[]
+
+  status            ProductStatus @default(DRAFT)
+  isFeatured        Boolean       @default(false)
+  isBestSeller      Boolean       @default(false)
+  isNewArrival      Boolean       @default(false)
+  isTodayDeal       Boolean       @default(false)
+
+  seoTitle          String?
+  seoDescription    String?
+  seoKeywords       String?
+
+  reviews           Review[]
+  orderItems        OrderItem[]
+  wishlistItems     WishlistItem[]
+  compareItems      CompareItem[]
+  recentlyViewed    RecentlyViewed[]
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([collectionId])
+  @@index([status])
+}
+
+model ProductSize {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label     String   // e.g. "5x8 ft"
+  widthCm   Float?
+  heightCm  Float?
+  priceDiff Decimal  @default(0) @db.Decimal(10, 2)
+  stock     Int       @default(0)
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String   // Cloudinary secure_url
+  publicId  String   // Cloudinary public_id (for deletion)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+// ==========================================================
+// REVIEWS
+// ==========================================================
+
+model Review {
+  id        String       @id @default(uuid())
+  productId String
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int
+  title     String?
+  comment   String?
+  status    ReviewStatus @default(PENDING)
+  adminReply String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+// ==========================================================
+// WISHLIST / COMPARE / RECENTLY VIEWED
+// ==========================================================
+
+model WishlistItem {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+}
+
+model CompareItem {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+}
+
+model RecentlyViewed {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  viewedAt  DateTime @default(now())
+
+  @@unique([userId, productId])
+}
+
+// ==========================================================
+// ORDERS
+// ==========================================================
+
+model Order {
+  id              String          @id @default(uuid())
+  orderNumber     String          @unique
+  userId          String?
+  user            User?           @relation(fields: [userId], references: [id])
+
+  guestEmail      String?
+  guestName       String?
+
+  items           OrderItem[]
+
+  subtotal        Decimal         @db.Decimal(10, 2)
+  shippingCharge  Decimal         @default(0) @db.Decimal(10, 2)
+  taxAmount       Decimal         @default(0) @db.Decimal(10, 2)
+  discountAmount  Decimal         @default(0) @db.Decimal(10, 2)
+  total           Decimal         @db.Decimal(10, 2)
+  currency        String          @default("USD")
+
+  couponCode      String?
+
+  status          OrderStatus     @default(PENDING)
+
+  paymentProvider PaymentProvider?
+  paymentStatus   PaymentStatus   @default(UNPAID)
+  paymentRef      String?
+
+  shippingAddress Json
+  billingAddress  Json?
+
+  trackingNumber  String?
+  estimatedDelivery DateTime?
+
+  invoiceUrl      String?
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([orderNumber])
+  @@index([userId])
+  @@index([status])
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  productName String
+  sizeLabel   String?
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  total       Decimal  @db.Decimal(10, 2)
+}
+
+// ==========================================================
+// COUPONS
+// ==========================================================
+
+model Coupon {
+  id            String       @id @default(uuid())
+  code          String       @unique
+  discountType  DiscountType
+  discountValue Decimal      @db.Decimal(10, 2)
+  minOrderValue Decimal?     @db.Decimal(10, 2)
+  usageLimit    Int?
+  usedCount     Int          @default(0)
+  expiresAt     DateTime?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+}
+
+// ==========================================================
+// CURRENCIES
+// ==========================================================
+
+model Currency {
+  id          String   @id @default(uuid())
+  code        String   @unique // USD, EUR, AED...
+  symbol      String
+  rateToBase  Decimal  @default(1) @db.Decimal(12, 6) // conversion rate relative to base currency
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+}
+
+// ==========================================================
+// BLOG
+// ==========================================================
+
+model Blog {
+  id             String   @id @default(uuid())
+  title          String
+  slug           String   @unique
+  excerpt        String?
+  content        String
+  coverImageUrl  String?
+  authorName     String?
+  seoTitle       String?
+  seoDescription String?
+  isPublished    Boolean  @default(false)
+  publishedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ==========================================================
+// YOUTUBE GALLERY
+// ==========================================================
+
+model YoutubeVideo {
+  id           String   @id @default(uuid())
+  title        String?
+  youtubeUrl   String
+  videoId      String   // extracted automatically
+  thumbnailUrl String   // generated automatically
+  position     Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+// ==========================================================
+// MEDIA LIBRARY (generic, for banners/logos/misc uploads)
+// ==========================================================
+
+model MediaAsset {
+  id        String   @id @default(uuid())
+  url       String
+  publicId  String
+  folder    String   // e.g. kamran-carpets/banners
+  fileType  String
+  sizeBytes Int?
+  createdAt DateTime @default(now())
+}
+
+// ==========================================================
+// SETTINGS
+// ==========================================================
+
+model Setting {
+  id    String @id @default("singleton")
+  key   String @unique
+  value Json
+}
+
+// ==========================================================
+// ACTIVITY LOGS
+// ==========================================================
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+}
+
+// ==========================================================
+// B2B / CUSTOM ORDER FORMS
+// ==========================================================
+
+model Inquiry {
+  id          String   @id @default(uuid())
+  type        String   // B2B, BULK, CUSTOM_CARPET, QUOTE
+  name        String
+  email       String
+  phone       String?
+  company     String?
+  message     String
+  metadata    Json?
+  isResolved  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}

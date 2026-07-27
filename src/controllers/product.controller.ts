@@ -13,14 +13,25 @@ import { CLOUDINARY_FOLDERS } from "@/config/cloudinary";
 import prisma from "@/config/prisma";
 import { logActivity } from "@/utils/activityLog";
 
+const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "EDITOR"];
+
 export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   const query = productQuerySchema.parse(req.query);
+  const isAdminRequest = !!req.user && ADMIN_ROLES.includes(req.user.role);
+  if (!isAdminRequest) {
+    query.status = "PUBLISHED";
+  }
   const result = await productService.listProducts(query);
   res.status(200).json({ success: true, ...result });
 });
 
 export const getProductBySlug = asyncHandler(async (req: Request, res: Response) => {
   const product = await productService.getProductBySlug(req.params.slug);
+  res.status(200).json({ success: true, data: product });
+});
+
+export const getProductById = asyncHandler(async (req: Request, res: Response) => {
+  const product = await productService.getProductById(req.params.id);
   res.status(200).json({ success: true, data: product });
 });
 
@@ -101,10 +112,13 @@ export const uploadProductImage = asyncHandler(async (req: Request, res: Respons
     },
   });
 
-  // First image uploaded becomes the featured image by default if none is set yet
-  if (!product.featuredImage) {
-    await prisma.product.update({ where: { id: productId }, data: { featuredImage: result.secureUrl } });
-  }
+  // Every current caller (Add Product, Edit Product) uploads a single
+  // image meant to BE the featured image — there's no separate multi-image
+  // gallery manager in the admin UI. Previously this only set featuredImage
+  // when the product had none yet, so replacing the photo on an existing
+  // product silently did nothing visible (the old image kept showing on
+  // the site while the new one sat unused in the gallery).
+  await prisma.product.update({ where: { id: productId }, data: { featuredImage: result.secureUrl } });
 
   res.status(201).json({ success: true, message: "Image uploaded", data: image });
 });

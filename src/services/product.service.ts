@@ -19,7 +19,7 @@ export async function listProducts(query: ProductQueryInput) {
     query;
 
   const where: Prisma.ProductWhereInput = {
-    ...(status ? { status } : { status: ProductStatus.PUBLISHED }),
+    ...(status === "ALL" ? {} : status ? { status } : { status: ProductStatus.PUBLISHED }),
     ...(search
       ? {
           OR: [
@@ -85,6 +85,21 @@ export async function getProductBySlug(slug: string) {
       gallery: { orderBy: { position: "asc" } },
       availableSizes: true,
       reviews: { where: { status: "APPROVED" }, include: { user: { select: { name: true, avatarUrl: true } } } },
+    },
+  });
+  if (!product) throw ApiError.notFound("Product not found");
+  return product;
+}
+
+export async function getProductById(id: string) {
+  const product = await prisma.product.findUnique({
+    where: { id },
+    include: {
+      category: true,
+      collection: true,
+      brand: true,
+      gallery: { orderBy: { position: "asc" } },
+      availableSizes: true,
     },
   });
   if (!product) throw ApiError.notFound("Product not found");

@@ -1,13 +1,14 @@
 import { Router } from "express";
 import * as productController from "@/controllers/product.controller";
-import { requireAuth } from "@/middlewares/auth.middleware";
+import { requireAuth, optionalAuth } from "@/middlewares/auth.middleware";
 import { requireAdmin } from "@/middlewares/role.middleware";
 import { upload } from "@/middlewares/upload.middleware";
 
 const router = Router();
 
-// Public
-router.get("/", productController.getProducts);
+// Public (optionalAuth lets logged-in admins request draft/all-status products)
+router.get("/", optionalAuth, productController.getProducts);
+router.get("/id/:id", requireAuth, requireAdmin, productController.getProductById);
 router.get("/:slug", productController.getProductBySlug);
 
 // Admin only
